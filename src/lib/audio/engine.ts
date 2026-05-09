@@ -96,4 +96,40 @@ export async function playTestBeep() {
   setTimeout(() => beep.dispose(), 800);
 }
 
+/**
+ * Bypass Tone.js entirely and play a beep with raw Web Audio. If this works
+ * but the Tone beep doesn't, the bug is inside Tone's bundling/init. If
+ * neither works, the issue is system/browser/tab mute.
+ */
+export async function playRawWebAudioBeep(): Promise<{
+  state: string;
+  durationMs: number;
+}> {
+  // Fresh AudioContext, independent of any Tone state
+  const Ctor =
+    (window as unknown as { AudioContext: typeof AudioContext }).AudioContext ||
+    (window as unknown as { webkitAudioContext: typeof AudioContext })
+      .webkitAudioContext;
+  if (!Ctor) throw new Error("Web Audio API not available in this browser");
+  const ctx = new Ctor();
+  console.info("[raw] context created", { state: ctx.state, sr: ctx.sampleRate });
+  if (ctx.state !== "running") {
+    await ctx.resume();
+    console.info("[raw] context after resume", { state: ctx.state });
+  }
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  gain.gain.value = 0.4; // -8 dB-ish
+  osc.frequency.value = 440;
+  osc.type = "sine";
+  osc.connect(gain).connect(ctx.destination);
+  const now = ctx.currentTime;
+  osc.start(now);
+  osc.stop(now + 0.4);
+  console.info("[raw] beep scheduled", { now, freq: 440 });
+  // Close the context after the beep to free hardware
+  setTimeout(() => ctx.close().catch(() => {}), 800);
+  return { state: ctx.state, durationMs: 400 };
+}
+
 export { Tone };

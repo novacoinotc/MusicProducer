@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Volume2, VolumeX, Loader2, AlertTriangle } from "lucide-react";
+import { Volume2, VolumeX, Loader2, AlertTriangle, Zap } from "lucide-react";
 import { toast } from "sonner";
 import {
   audioContextState,
   playTestBeep,
+  playRawWebAudioBeep,
 } from "@/lib/audio/engine";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,7 @@ import { cn } from "@/lib/utils";
 export function AudioStatus() {
   const [state, setState] = useState<string>("?");
   const [testing, setTesting] = useState(false);
+  const [testingRaw, setTestingRaw] = useState(false);
   const [lastBeepHeard, setLastBeepHeard] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -49,6 +51,25 @@ export function AudioStatus() {
       setLastBeepHeard(false);
     } finally {
       setTimeout(() => setTesting(false), 800);
+    }
+  }
+
+  async function testRaw() {
+    setTestingRaw(true);
+    try {
+      await playRawWebAudioBeep();
+      toast("¿Oíste el beep CRUDO (sin Tone)?", {
+        action: { label: "Sí", onClick: () => setLastBeepHeard(true) },
+        cancel: { label: "No", onClick: () => setLastBeepHeard(false) },
+        duration: 6000,
+      });
+    } catch (e) {
+      console.error("[audio-status] raw test failed", e);
+      toast.error(
+        e instanceof Error ? e.message : "No se pudo iniciar Web Audio",
+      );
+    } finally {
+      setTimeout(() => setTestingRaw(false), 800);
     }
   }
 
@@ -92,20 +113,36 @@ export function AudioStatus() {
             </p>
           </div>
         </div>
-        <Button
-          size="sm"
-          onClick={test}
-          disabled={testing}
-          className="ml-auto"
-        >
-          {testing ? (
-            <Loader2 className="!h-3 !w-3 animate-spin" />
-          ) : (
-            <Volume2 className="!h-3 !w-3" />
-          )}
-          Test audio (beep 440 Hz)
-        </Button>
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Button size="sm" onClick={test} disabled={testing}>
+            {testing ? (
+              <Loader2 className="!h-3 !w-3 animate-spin" />
+            ) : (
+              <Volume2 className="!h-3 !w-3" />
+            )}
+            Tone beep
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={testRaw}
+            disabled={testingRaw}
+          >
+            {testingRaw ? (
+              <Loader2 className="!h-3 !w-3 animate-spin" />
+            ) : (
+              <Zap className="!h-3 !w-3" />
+            )}
+            Web Audio crudo
+          </Button>
+        </div>
       </div>
+
+      <p className="mt-2 text-[10px] text-muted-foreground">
+        Si <strong>Tone beep</strong> falla pero <strong>Web Audio crudo</strong>{" "}
+        funciona, el problema es Tone. Si ninguno funciona, es tu sistema (mute,
+        salida, navegador).
+      </p>
 
       {lastBeepHeard === false && (
         <div className="mt-3 flex items-start gap-2 rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-xs">
