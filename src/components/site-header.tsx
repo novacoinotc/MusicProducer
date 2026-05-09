@@ -14,6 +14,12 @@ export function SiteHeader() {
         </Link>
         <nav className="ml-auto flex items-center gap-1 text-sm text-muted-foreground">
           <Link
+            href="/clases"
+            className="rounded-md bg-primary/15 px-3 py-1.5 font-medium text-primary hover:bg-primary/25"
+          >
+            Curso
+          </Link>
+          <Link
             href="/groove"
             className="rounded-md px-3 py-1.5 hover:bg-accent hover:text-foreground"
           >

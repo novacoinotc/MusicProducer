@@ -92,17 +92,21 @@ export default function Home() {
             groove, sound design, oído, arreglo y deconstrucción de referencias.
             Suena en tu navegador desde el primer minuto.
           </p>
-          <div className="mt-8 flex justify-center gap-3">
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Button asChild size="lg">
-              <Link href="/groove">
-                Empezar con Groove Lab
+              <Link href="/clases">
+                Empezar el curso (70 lecciones)
                 <ArrowRight />
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <Link href="/ear">Probar oído</Link>
+              <Link href="/groove">Saltar a Groove Lab</Link>
             </Button>
           </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            ¿Cero experiencia? Empieza con el curso. ¿Ya sabes lo básico? Salta a
+            las labs.
+          </p>
         </section>
 
         <section className="mx-auto mt-20 grid max-w-6xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
