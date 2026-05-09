@@ -177,6 +177,24 @@ export class TechnoSynth {
     this.lfoConnectedTo = null;
   }
 
+  /**
+   * Safely ramp a Tone Signal/Param to a value. Some Tone Signals have a
+   * narrow validation range that triggers on the EPSILON substitution that
+   * `exponentialRampTo` applies when the target value is 0; we swallow those
+   * so a single misbehaving Param can't break the whole synth.
+   */
+  private safeRamp(
+    target: { rampTo: (v: number, t: number) => unknown },
+    value: number,
+    time = 0.02,
+  ) {
+    try {
+      target.rampTo(value, time);
+    } catch (e) {
+      console.warn("[synth] rampTo failed, ignoring", e);
+    }
+  }
+
   set(state: Partial<SynthState>) {
     Object.assign(this.state, state);
     const s = this.state;
@@ -192,20 +210,20 @@ export class TechnoSynth {
       } as unknown as Parameters<typeof this.osc2.set>[0]);
     }
     if (state.osc2Mix !== undefined) {
-      this.osc2Gain.gain.rampTo(s.osc2Mix, 0.02);
+      this.safeRamp(this.osc2Gain.gain, s.osc2Mix);
     }
     if (state.subLevel !== undefined) {
-      this.subGain.gain.rampTo(s.subLevel, 0.02);
+      this.safeRamp(this.subGain.gain, s.subLevel);
     }
     if (state.filterType !== undefined) {
       this.filter.type = s.filterType;
     }
     if (state.filterCutoff !== undefined) {
-      this.filter.frequency.rampTo(s.filterCutoff, 0.02);
+      this.safeRamp(this.filter.frequency, s.filterCutoff);
       this.filterEnv.baseFrequency = s.filterCutoff;
     }
     if (state.filterRes !== undefined) {
-      this.filter.Q.rampTo(s.filterRes, 0.02);
+      this.safeRamp(this.filter.Q, s.filterRes);
     }
     if (state.filterEnvAmount !== undefined) {
       this.filterEnv.octaves = s.filterEnvAmount * 4;
@@ -238,7 +256,7 @@ export class TechnoSynth {
       this.sub.set({ envelope: env });
     }
     if (state.lfoRate !== undefined) {
-      this.lfo.frequency.rampTo(s.lfoRate, 0.02);
+      this.safeRamp(this.lfo.frequency, s.lfoRate);
     }
     if (state.lfoDepth !== undefined || state.lfoTarget !== undefined) {
       this.disconnectLfo();
@@ -253,19 +271,19 @@ export class TechnoSynth {
       }
     }
     if (state.delayMix !== undefined) {
-      this.delay.wet.rampTo(s.delayMix, 0.02);
+      this.safeRamp(this.delay.wet, s.delayMix);
     }
     if (state.delayTime !== undefined) {
-      this.delay.delayTime.rampTo(s.delayTime, 0.02);
+      this.safeRamp(this.delay.delayTime, s.delayTime);
     }
     if (state.reverbMix !== undefined) {
-      this.reverb.wet.rampTo(s.reverbMix, 0.02);
+      this.safeRamp(this.reverb.wet, s.reverbMix);
     }
     if (state.drive !== undefined) {
       this.drive.distortion = s.drive;
     }
     if (state.volume !== undefined) {
-      this.out.gain.rampTo(Tone.dbToGain(s.volume), 0.05);
+      this.safeRamp(this.out.gain, Tone.dbToGain(s.volume), 0.05);
     }
   }
 

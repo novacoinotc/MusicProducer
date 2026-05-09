@@ -56,9 +56,11 @@ export function SynthLab() {
     if (!audioReady) return;
     let s: TechnoSynth | null = null;
     try {
+      // The constructor already applies DEFAULT_SYNTH values directly to the
+      // freshly-built nodes — no rampTo on initial mount, so we avoid the
+      // exponentialRampTo([0, 0], 1e-7) crash path entirely.
       s = new TechnoSynth();
       synthRef.current = s;
-      s.set(state);
     } catch (e) {
       console.error("[synth] init failed", e);
       const err = e instanceof Error ? e : new Error(String(e));
