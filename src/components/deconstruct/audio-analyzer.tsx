@@ -10,7 +10,9 @@ import {
   SECTION_COLOR,
   SECTION_LABEL,
   type TrackAnalysis,
+  type TrackSection,
 } from "@/lib/audio/track-analysis";
+import { ExtractedPattern } from "./extracted-pattern";
 import { cn } from "@/lib/utils";
 
 const FREQ_BANDS = [
@@ -34,6 +36,10 @@ export function AudioAnalyzer() {
   );
   const [analysis, setAnalysis] = useState<TrackAnalysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [bpmOverride, setBpmOverride] = useState<number | null>(null);
+  const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
+  const [selectedSection, setSelectedSection] =
+    useState<TrackSection | null>(null);
 
   const playerRef = useRef<Tone.Player | null>(null);
   const fftRef = useRef<Tone.FFT | null>(null);
@@ -58,11 +64,14 @@ export function AudioAnalyzer() {
     setAudioUrl(url);
     setAnalyzing(true);
     setAnalysis(null);
+    setSelectedSection(null);
+    setBpmOverride(null);
 
     // Compute waveform peaks + structural analysis
     const arrayBuffer = await file.arrayBuffer();
     const ctx = new AudioContext();
     const buf = await ctx.decodeAudioData(arrayBuffer.slice(0));
+    setAudioBuffer(buf);
     setDuration(buf.duration);
     const peaks = computePeaks(buf, 800);
     setWaveform(peaks);
@@ -161,6 +170,9 @@ export function AudioAnalyzer() {
     setBandLevels(Array(FREQ_BANDS.length).fill(0));
     setAnalysis(null);
     setAnalyzing(false);
+    setAudioBuffer(null);
+    setSelectedSection(null);
+    setBpmOverride(null);
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
   }
 
@@ -258,7 +270,22 @@ export function AudioAnalyzer() {
         <TrackStructure
           analysis={analysis}
           position={position}
+          bpmOverride={bpmOverride}
+          onBpmOverrideChange={setBpmOverride}
           onSeek={seekTo}
+          selectedSection={selectedSection}
+          onSelectSection={setSelectedSection}
+        />
+      )}
+
+      {analysis && audioBuffer && selectedSection && (
+        <ExtractedPattern
+          buf={audioBuffer}
+          startSec={selectedSection.startSec}
+          bpm={bpmOverride ?? analysis.bpm}
+          sectionLabel={`${SECTION_LABEL[selectedSection.type]} · compás ${
+            selectedSection.startBar + 1
+          }`}
         />
       )}
 
@@ -330,32 +357,57 @@ export function AudioAnalyzer() {
 function TrackStructure({
   analysis,
   position,
+  bpmOverride,
+  onBpmOverrideChange,
   onSeek,
+  selectedSection,
+  onSelectSection,
 }: {
   analysis: TrackAnalysis;
   position: number;
+  bpmOverride: number | null;
+  onBpmOverrideChange: (v: number | null) => void;
   onSeek: (sec: number) => void;
+  selectedSection: TrackSection | null;
+  onSelectSection: (s: TrackSection | null) => void;
 }) {
   const { bpm, totalBars, durationSec, sections, bars } = analysis;
+  const effectiveBpm = bpmOverride ?? bpm;
   const currentBar =
     bars.findIndex((b) => position >= b.startSec && position < b.endSec) ?? -1;
 
   return (
     <div className="space-y-4 rounded-xl border bg-card p-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-mono text-xs uppercase tracking-wider text-primary">
           Estructura del track
         </h3>
-        <div className="flex flex-wrap gap-4 font-mono text-xs text-muted-foreground">
-          <span>
-            BPM detectado{" "}
-            <span className="font-mono text-sm text-foreground">
-              {bpm}
-            </span>
-          </span>
-          <span>
-            {totalBars} compases
-          </span>
+        <div className="flex flex-wrap items-center gap-3 font-mono text-xs text-muted-foreground">
+          <label className="flex items-center gap-2">
+            <span>BPM</span>
+            <input
+              type="number"
+              min={60}
+              max={200}
+              value={effectiveBpm}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (Number.isFinite(v) && v > 0)
+                  onBpmOverrideChange(v === bpm ? null : v);
+              }}
+              className="h-7 w-16 rounded-md border bg-background px-2 text-center font-mono text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            {bpmOverride !== null && (
+              <button
+                onClick={() => onBpmOverrideChange(null)}
+                className="text-[10px] underline hover:text-foreground"
+                title="Volver al BPM detectado"
+              >
+                detectado: {bpm}
+              </button>
+            )}
+          </label>
+          <span>{totalBars} compases</span>
           <span>
             {Math.floor(durationSec / 60)}:
             {Math.floor(durationSec % 60).toString().padStart(2, "0")}
@@ -369,13 +421,21 @@ function TrackStructure({
           {sections.map((s, i) => {
             const widthPct =
               ((s.endBar - s.startBar + 1) / totalBars) * 100;
+            const isSelected =
+              selectedSection?.startBar === s.startBar &&
+              selectedSection?.type === s.type;
             return (
               <button
                 key={i}
-                onClick={() => onSeek(s.startSec)}
+                onClick={() => {
+                  onSelectSection(isSelected ? null : s);
+                  onSeek(s.startSec);
+                }}
                 className={cn(
                   "group relative h-full border-r border-background/20 transition-opacity hover:opacity-80",
                   SECTION_COLOR[s.type],
+                  isSelected &&
+                    "ring-2 ring-primary ring-offset-1 ring-offset-background",
                 )}
                 style={{ width: `${widthPct}%` }}
                 title={`${SECTION_LABEL[s.type]} · ${s.endBar - s.startBar + 1} compases`}
@@ -431,38 +491,59 @@ function TrackStructure({
       </div>
 
       {/* Section legend with timing detail */}
-      <div className="grid gap-2 sm:grid-cols-2">
-        {sections.map((s, i) => {
-          const lengthBars = s.endBar - s.startBar + 1;
-          const lengthSec = s.endSec - s.startSec;
-          return (
-            <button
-              key={i}
-              onClick={() => onSeek(s.startSec)}
-              className="flex items-center justify-between gap-3 rounded-md border bg-secondary/20 p-3 text-left transition-colors hover:bg-secondary/40"
-            >
-              <div className="flex items-center gap-3">
-                <span
-                  className={cn(
-                    "h-3 w-3 rounded-sm",
-                    SECTION_COLOR[s.type],
-                  )}
-                />
-                <div>
-                  <div className="font-medium">{SECTION_LABEL[s.type]}</div>
-                  <div className="font-mono text-[10px] text-muted-foreground">
-                    Compás {s.startBar + 1}–{s.endBar + 1} · {lengthBars}{" "}
-                    bars · {Math.round(lengthSec)}s
+      <div>
+        <h4 className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Secciones · click para extraer su patrón rítmico
+        </h4>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {sections.map((s, i) => {
+            const lengthBars = s.endBar - s.startBar + 1;
+            const lengthSec = s.endSec - s.startSec;
+            const isSelected =
+              selectedSection?.startBar === s.startBar &&
+              selectedSection?.type === s.type;
+            return (
+              <button
+                key={i}
+                onClick={() => {
+                  onSelectSection(isSelected ? null : s);
+                  onSeek(s.startSec);
+                }}
+                className={cn(
+                  "flex items-center justify-between gap-3 rounded-md border bg-secondary/20 p-3 text-left transition-colors hover:bg-secondary/40",
+                  isSelected && "border-primary/60 bg-primary/10",
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    className={cn(
+                      "h-3 w-3 rounded-sm",
+                      SECTION_COLOR[s.type],
+                    )}
+                  />
+                  <div>
+                    <div className="font-medium">
+                      {SECTION_LABEL[s.type]}
+                      {isSelected && (
+                        <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-primary">
+                          · seleccionada
+                        </span>
+                      )}
+                    </div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      Compás {s.startBar + 1}–{s.endBar + 1} · {lengthBars}{" "}
+                      bars · {Math.round(lengthSec)}s
+                    </div>
                   </div>
                 </div>
-              </div>
-              <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                {Math.floor(s.startSec / 60)}:
-                {Math.floor(s.startSec % 60).toString().padStart(2, "0")}
-              </span>
-            </button>
-          );
-        })}
+                <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                  {Math.floor(s.startSec / 60)}:
+                  {Math.floor(s.startSec % 60).toString().padStart(2, "0")}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

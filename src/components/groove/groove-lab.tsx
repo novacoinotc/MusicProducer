@@ -39,6 +39,31 @@ export function GrooveLab() {
       .catch(() => {});
   }, []);
 
+  // If the user sent a pattern from the Track Deconstructor, load it once.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("mt:groove-pattern");
+      if (!raw) return;
+      const data = JSON.parse(raw) as {
+        pattern?: Pattern;
+        bpm?: number;
+        source?: string;
+      };
+      if (data.pattern) {
+        setPattern(data.pattern);
+        if (data.bpm) setBpm(data.bpm);
+        toast.success("Patrón cargado del Deconstructor", {
+          description: data.source
+            ? `Origen: ${data.source}`
+            : undefined,
+        });
+        window.localStorage.removeItem("mt:groove-pattern");
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }, []);
+
   // Lazy-create sequencer once audio is ready
   useEffect(() => {
     if (!audioReady) return;

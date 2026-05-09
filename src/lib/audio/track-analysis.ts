@@ -61,11 +61,12 @@ function detectBpm(buf: AudioBuffer): number {
     onset[i] = d > 0 ? d : 0;
   }
 
-  // Autocorrelate onset signal across plausible BPM lags
-  // env is at 100 Hz → lag (samples) = 60 * 100 / BPM
-  // BPM 80..160 → lag 75..37
-  const minLag = 37; // ~162 BPM
-  const maxLag = 90; // ~67 BPM
+  // Autocorrelate the onset signal at lag values inside our target BPM range.
+  // env is at 100 Hz → lag (samples) = 60 * 100 / BPM.
+  // We scan 100..150 BPM directly so we never need a halve/double octave fix.
+  const minLag = Math.round((60 * 100) / 150); // 40
+  const maxLag = Math.round((60 * 100) / 100); // 60
+
   let bestLag = minLag;
   let bestScore = 0;
   for (let lag = minLag; lag <= maxLag; lag++) {
@@ -73,18 +74,16 @@ function detectBpm(buf: AudioBuffer): number {
     for (let i = 0; i + lag < envSize; i++) {
       acc += onset[i] * onset[i + lag];
     }
-    if (acc > bestScore) {
-      bestScore = acc;
+    // Bias toward typical techno tempos (peak around 128) to break ties
+    const bpmHere = (60 * 100) / lag;
+    const techoPrior = Math.exp(-Math.pow((bpmHere - 128) / 18, 2));
+    const score = acc * (0.7 + 0.3 * techoPrior);
+    if (score > bestScore) {
+      bestScore = score;
       bestLag = lag;
     }
   }
-  const bpm = (60 * 100) / bestLag;
-
-  // Snap to plausible techno range — if octave error, double or halve
-  let snapped = bpm;
-  while (snapped < 110) snapped *= 2;
-  while (snapped > 145) snapped /= 2;
-  return Math.round(snapped);
+  return Math.round((60 * 100) / bestLag);
 }
 
 function computeBars(buf: AudioBuffer, bpm: number): BarBlock[] {
@@ -183,15 +182,24 @@ function detectSections(bars: BarBlock[]): TrackSection[] {
     to: smooth.length - 1,
   });
 
-  // Merge groups that are too short (< 4 bars) into the previous one
-  const merged: typeof groups = [];
-  for (const g of groups) {
-    if (merged.length && g.to - g.from + 1 < 4) {
-      const last = merged[merged.length - 1];
-      last.to = g.to;
-    } else {
-      merged.push({ ...g });
+  // Merge groups that are too short (< 8 bars — typical techno block) into the
+  // previous one. Run repeatedly until stable so chains of short groups
+  // collapse into the bigger surrounding section.
+  let merged: typeof groups = groups.map((g) => ({ ...g }));
+  let stable = false;
+  while (!stable) {
+    stable = true;
+    const next: typeof groups = [];
+    for (const g of merged) {
+      const len = g.to - g.from + 1;
+      if (next.length && len < 8) {
+        next[next.length - 1].to = g.to;
+        stable = false;
+      } else {
+        next.push({ ...g });
+      }
     }
+    merged = next;
   }
 
   // Map levels to section types using context (position + transition)
