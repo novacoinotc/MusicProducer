@@ -291,20 +291,20 @@ export class TechnoSynth {
     return { ...this.state };
   }
 
-  noteOn(note: string, velocity = 0.8) {
-    const now = Tone.now();
-    this.osc1.triggerAttack(note, now, velocity);
-    this.osc2.triggerAttack(note, now, velocity);
-    this.sub.triggerAttack(note, now, velocity);
-    this.filterEnv.triggerAttack(now);
+  noteOn(note: string, velocity = 0.8, time?: number) {
+    const t = time ?? Tone.now();
+    this.osc1.triggerAttack(note, t, velocity);
+    this.osc2.triggerAttack(note, t, velocity);
+    this.sub.triggerAttack(note, t, velocity);
+    this.filterEnv.triggerAttack(t);
   }
 
-  noteOff(note: string) {
-    const now = Tone.now();
-    this.osc1.triggerRelease(note, now);
-    this.osc2.triggerRelease(note, now);
-    this.sub.triggerRelease(note, now);
-    this.filterEnv.triggerRelease(now);
+  noteOff(note: string, time?: number) {
+    const t = time ?? Tone.now();
+    this.osc1.triggerRelease(note, t);
+    this.osc2.triggerRelease(note, t);
+    this.sub.triggerRelease(note, t);
+    this.filterEnv.triggerRelease(t);
   }
 
   releaseAll() {

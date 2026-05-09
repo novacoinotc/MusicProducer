@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Lightbulb, Wand2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Lightbulb, Pause, Play, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { ensureAudio } from "@/lib/audio/engine";
 import {
@@ -13,6 +13,7 @@ import {
   type LfoTarget,
 } from "@/lib/audio/synth";
 import { SYNTH_PRESETS, type SynthPreset } from "@/lib/synth-presets";
+import { SynthJam, ARP_PATTERNS } from "@/lib/audio/synth-jam";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Knob } from "./knob";
@@ -41,11 +42,15 @@ const LFO_OPTIONS = [
 
 export function SynthLab() {
   const synthRef = useRef<TechnoSynth | null>(null);
+  const jamRef = useRef<SynthJam | null>(null);
   const [audioReady, setAudioReady] = useState(false);
   const [state, setState] = useState<SynthState>(DEFAULT_SYNTH);
   const [activePreset, setActivePreset] = useState<SynthPreset | null>(null);
   const [challenge, setChallenge] = useState<SynthPreset | null>(null);
   const [showHint, setShowHint] = useState(false);
+  const [jamPlaying, setJamPlaying] = useState(false);
+  const [jamBpm, setJamBpm] = useState(124);
+  const [arpId, setArpId] = useState<string>(ARP_PATTERNS[0].id);
 
   const [initError, setInitError] = useState<{
     message: string;
@@ -111,6 +116,42 @@ export function SynthLab() {
     }, 900);
   }
 
+  // Lazily build the Jam engine when audio is ready and the synth exists.
+  useEffect(() => {
+    if (!audioReady || !synthRef.current) return;
+    const jam = new SynthJam(synthRef.current);
+    jam.setBpm(jamBpm);
+    const arp = ARP_PATTERNS.find((a) => a.id === arpId) ?? ARP_PATTERNS[0];
+    jam.setArpeggio(arp.notes);
+    jamRef.current = jam;
+    return () => {
+      jam.dispose();
+      jamRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioReady]);
+
+  useEffect(() => {
+    jamRef.current?.setBpm(jamBpm);
+  }, [jamBpm]);
+
+  useEffect(() => {
+    const arp = ARP_PATTERNS.find((a) => a.id === arpId) ?? ARP_PATTERNS[0];
+    jamRef.current?.setArpeggio(arp.notes);
+  }, [arpId]);
+
+  function toggleJam() {
+    const jam = jamRef.current;
+    if (!jam) return;
+    if (jamPlaying) {
+      jam.stop();
+      setJamPlaying(false);
+    } else {
+      jam.start();
+      setJamPlaying(true);
+    }
+  }
+
   if (!audioReady) {
     return (
       <div className="rounded-xl border bg-card p-10 text-center">
@@ -166,6 +207,69 @@ export function SynthLab() {
 
   return (
     <div className="space-y-6">
+      {/* Jam bar — play synth in context of a four-on-the-floor groove */}
+      <div className="flex flex-wrap items-center gap-4 rounded-xl border bg-card p-4">
+        <Button
+          size="icon"
+          onClick={toggleJam}
+          className="h-12 w-12 shrink-0 rounded-full"
+          variant={jamPlaying ? "secondary" : "default"}
+          aria-label={jamPlaying ? "Pausar groove" : "Tocar con groove"}
+        >
+          {jamPlaying ? (
+            <Pause className="!h-5 !w-5" />
+          ) : (
+            <Play className="!h-5 !w-5" />
+          )}
+        </Button>
+
+        <div className="flex flex-col">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Tocar con groove
+          </span>
+          <span className="text-sm">
+            Kick + clap + hat + tu synth en arpegio.{" "}
+            <span className="text-muted-foreground">
+              Ajusta perillas mientras suena.
+            </span>
+          </span>
+        </div>
+
+        <label className="ml-auto flex items-center gap-2">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            BPM
+          </span>
+          <input
+            type="number"
+            min={80}
+            max={160}
+            value={jamBpm}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (Number.isFinite(v) && v > 0) setJamBpm(v);
+            }}
+            className="h-8 w-16 rounded-md border bg-background px-2 text-center font-mono text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </label>
+
+        <label className="flex items-center gap-2">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Patrón
+          </span>
+          <select
+            value={arpId}
+            onChange={(e) => setArpId(e.target.value)}
+            className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            {ARP_PATTERNS.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       {/* Synth panel */}
       <Card>
         <CardHeader>
