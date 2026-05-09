@@ -41,3 +41,4 @@ next-env.d.ts
 
 # drizzle — keep migrations under version control (they describe the schema)
 # /drizzle
+.env*.local

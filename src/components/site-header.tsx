@@ -20,6 +20,12 @@ export function SiteHeader() {
             Curso
           </Link>
           <Link
+            href="/studio"
+            className="rounded-md px-3 py-1.5 hover:bg-accent hover:text-foreground"
+          >
+            Studio
+          </Link>
+          <Link
             href="/groove"
             className="rounded-md px-3 py-1.5 hover:bg-accent hover:text-foreground"
           >

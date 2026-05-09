@@ -13,6 +13,7 @@ import {
   type TrackSection,
 } from "@/lib/audio/track-analysis";
 import { ExtractedPattern } from "./extracted-pattern";
+import { AICritiquePanel } from "@/components/ai/ai-critique-panel";
 import { cn } from "@/lib/utils";
 
 const FREQ_BANDS = [
@@ -286,6 +287,14 @@ export function AudioAnalyzer() {
           sectionLabel={`${SECTION_LABEL[selectedSection.type]} · compás ${
             selectedSection.startBar + 1
           }`}
+        />
+      )}
+
+      {analysis && (
+        <AICritiquePanel
+          analysis={analysis}
+          trackTitle={fileName ?? undefined}
+          bandLevels={bandLevels}
         />
       )}
 
