@@ -9,19 +9,32 @@ import * as Tone from "tone";
  * every call and resume if needed. Must be invoked from inside a user
  * gesture (click/tap) on the very first call.
  */
+function isSafari() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  // Safari includes "Safari" but NOT "Chrome"/"Chromium"/"Android"
+  return /^((?!chrome|chromium|android).)*safari/i.test(ua);
+}
+
+/**
+ * On Safari the AudioContext stays suspended unless we resume it
+ * synchronously inside the user-gesture handler — going through Tone.start()
+ * with extra awaits in between sometimes loses the gesture window. So we
+ * resume the rawContext FIRST, before any other await, then let Tone
+ * finish its own initialization.
+ */
 export async function ensureAudio(): Promise<typeof Tone> {
   if (typeof window === "undefined") {
     throw new Error("Audio engine can only run in the browser");
   }
 
   const ctx = Tone.getContext();
+  const raw = ctx.rawContext as AudioContext;
   console.info("[engine] ensureAudio start", {
+    safari: isSafari(),
     contextState: ctx.state,
-    rawState: (ctx.rawContext as AudioContext)?.state,
+    rawState: raw?.state,
     sampleRate: ctx.sampleRate,
-    destinationVolume:
-      (Tone.getDestination() as unknown as { volume: { value: number } })
-        ?.volume?.value,
   });
 
   if (ctx.state === "running") {
@@ -29,27 +42,53 @@ export async function ensureAudio(): Promise<typeof Tone> {
     return Tone;
   }
 
-  await Tone.start();
-  console.info("[engine] Tone.start() resolved", {
-    contextState: Tone.getContext().state,
-  });
-
-  const raw = ctx.rawContext as AudioContext;
+  // ─── Safari-friendly path: resume rawContext FIRST, before Tone.start ───
+  // This is the only `await` allowed before continuing — must stay inside
+  // the user gesture window for Webkit.
   if (raw && raw.state !== "running") {
     try {
       await raw.resume();
-      console.info("[engine] rawContext.resume() resolved", {
+      console.info("[engine] rawContext.resume() resolved early", {
         rawState: raw.state,
       });
     } catch (e) {
-      console.error("[engine] rawContext.resume failed", e);
+      console.error("[engine] early rawContext.resume failed", e);
+    }
+  }
+
+  // Now let Tone do its own start (loads worklets, etc.)
+  try {
+    await Tone.start();
+    console.info("[engine] Tone.start() resolved", {
+      contextState: Tone.getContext().state,
+    });
+  } catch (e) {
+    console.error("[engine] Tone.start() threw", e);
+  }
+
+  // Wait for any internal worklets/buffers Tone is loading
+  try {
+    await Tone.loaded();
+  } catch {
+    // noop
+  }
+
+  // Final belt-and-suspenders attempt
+  if (raw && raw.state !== "running") {
+    try {
+      await raw.resume();
+    } catch {
+      // noop
     }
   }
 
   if (Tone.getContext().state !== "running") {
     throw new Error(
       `No se pudo iniciar el audio (estado: ${Tone.getContext().state}). ` +
-        "Verifica que tu navegador no tenga la pestaña silenciada y que el volumen del sistema esté arriba.",
+        (isSafari()
+          ? "Safari requiere que el primer click sea directo (no después de hover/touch). " +
+            "Recarga la página y pulsa el botón otra vez. Si persiste, prueba Chrome."
+          : "Verifica que tu navegador no tenga la pestaña silenciada y que el volumen del sistema esté arriba."),
     );
   }
   console.info("[engine] audio is now running");

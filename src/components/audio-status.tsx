@@ -74,6 +74,9 @@ export function AudioStatus() {
   }
 
   const isRunning = state === "running";
+  const safari =
+    typeof navigator !== "undefined" &&
+    /^((?!chrome|chromium|android).)*safari/i.test(navigator.userAgent);
 
   return (
     <div className="rounded-lg border bg-card p-4">
@@ -143,6 +146,21 @@ export function AudioStatus() {
         funciona, el problema es Tone. Si ninguno funciona, es tu sistema (mute,
         salida, navegador).
       </p>
+
+      {safari && (
+        <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+          <div>
+            <strong className="text-amber-400">Estás en Safari.</strong> Web
+            Audio en Safari tiene quirks conocidos (gestos estrictos,
+            AudioWorklets lentos). Si oyes el beep pero los sequencers siguen
+            mudos, abre el curso en{" "}
+            <strong className="text-foreground">Chrome o Firefox</strong> — todo
+            funciona ahí. Tu progreso vive en una cookie de sesión por
+            navegador.
+          </div>
+        </div>
+      )}
 
       {lastBeepHeard === false && (
         <div className="mt-3 flex items-start gap-2 rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-xs">
