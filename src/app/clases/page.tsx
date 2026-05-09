@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { Check, Lock } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
+import { AudioStatus } from "@/components/audio-status";
 import {
   BLOCKS,
   LESSONS,
@@ -61,6 +62,9 @@ export default async function CoursePage() {
               es una idea + práctica + check.
             </p>
           </header>
+
+          {/* Audio diagnostic */}
+          <AudioStatus />
 
           {/* Progress */}
           <section className="rounded-xl border bg-card p-6">
