@@ -11,8 +11,10 @@ export interface DrumKit {
 }
 
 /**
- * Synthesized techno drum kit. No samples — every voice is generated with Tone.js
- * synths so the app stays small and works offline.
+ * Synthesized techno drum kit. Each voice is generated with Tone.js synths so
+ * the app stays sample-free. Hats and rim use NoiseSynth + filters because
+ * MetalSynth requires a `note` arg in its triggerAttackRelease signature and
+ * was producing silent triggers when called with only a duration.
  */
 export function createDrumKit(): DrumKit {
   const out = new Tone.Gain(1).toDestination();
@@ -32,38 +34,35 @@ export function createDrumKit(): DrumKit {
     volume: -2,
   }).connect(out);
 
-  // Clap — noise burst with short envelope chain
+  // Clap — short noise burst through bandpass
   const clapNoise = new Tone.NoiseSynth({
     noise: { type: "white" },
     envelope: { attack: 0.001, decay: 0.18, sustain: 0, release: 0.05 },
-    volume: -8,
+    volume: -6,
   });
-  const clapFilter = new Tone.Filter(1100, "bandpass").connect(out);
+  const clapFilter = new Tone.Filter(1200, "bandpass").connect(out);
   clapFilter.Q.value = 1.2;
   clapNoise.connect(clapFilter);
 
-  // Closed hat
-  const hat = new Tone.MetalSynth({
-    envelope: { attack: 0.001, decay: 0.04, release: 0.02 },
-    harmonicity: 5.1,
-    modulationIndex: 32,
-    resonance: 4000,
-    octaves: 1.5,
-    volume: -22,
+  // Closed hat — bright noise burst, very short envelope
+  const hatNoise = new Tone.NoiseSynth({
+    noise: { type: "white" },
+    envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.02 },
+    volume: -8,
   });
-  const hatFilter = new Tone.Filter(8000, "highpass").connect(out);
-  hat.connect(hatFilter);
+  const hatFilter = new Tone.Filter(7000, "highpass").connect(out);
+  hatFilter.Q.value = 0.8;
+  hatNoise.connect(hatFilter);
 
-  // Open hat — same metal synth with longer envelope
-  const ohat = new Tone.MetalSynth({
-    envelope: { attack: 0.001, decay: 0.3, release: 0.2 },
-    harmonicity: 5.1,
-    modulationIndex: 32,
-    resonance: 4000,
-    octaves: 1.5,
-    volume: -22,
+  // Open hat — same idea, longer decay (own filter so it can run independently)
+  const ohatNoise = new Tone.NoiseSynth({
+    noise: { type: "white" },
+    envelope: { attack: 0.001, decay: 0.32, sustain: 0, release: 0.18 },
+    volume: -10,
   });
-  ohat.connect(hatFilter);
+  const ohatFilter = new Tone.Filter(7000, "highpass").connect(out);
+  ohatFilter.Q.value = 0.8;
+  ohatNoise.connect(ohatFilter);
 
   // Percussion — woody tom-ish blip
   const perc = new Tone.MembraneSynth({
@@ -71,17 +70,24 @@ export function createDrumKit(): DrumKit {
     octaves: 2,
     oscillator: { type: "triangle" },
     envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.1 },
-    volume: -10,
+    volume: -8,
   }).connect(out);
 
-  // Rim shot
-  const rim = new Tone.MetalSynth({
-    envelope: { attack: 0.001, decay: 0.02, release: 0.01 },
-    harmonicity: 12,
-    modulationIndex: 50,
-    resonance: 7000,
-    octaves: 0.5,
-    volume: -18,
+  // Rim — sharp noise transient through bandpass + a short pitched click
+  const rimNoise = new Tone.NoiseSynth({
+    noise: { type: "white" },
+    envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.01 },
+    volume: -10,
+  });
+  const rimFilter = new Tone.Filter(2200, "bandpass").connect(out);
+  rimFilter.Q.value = 4;
+  rimNoise.connect(rimFilter);
+  const rimClick = new Tone.MembraneSynth({
+    pitchDecay: 0.002,
+    octaves: 1,
+    oscillator: { type: "square" },
+    envelope: { attack: 0.001, decay: 0.02, sustain: 0, release: 0.02 },
+    volume: -16,
   }).connect(out);
 
   return {
@@ -95,16 +101,17 @@ export function createDrumKit(): DrumKit {
           clapNoise.triggerAttackRelease("16n", time, vel);
           break;
         case "hat":
-          hat.triggerAttackRelease("32n", time, vel * 0.7);
+          hatNoise.triggerAttackRelease("32n", time, vel * 0.9);
           break;
         case "ohat":
-          ohat.triggerAttackRelease("8n", time, vel * 0.7);
+          ohatNoise.triggerAttackRelease("8n", time, vel * 0.9);
           break;
         case "perc":
           perc.triggerAttackRelease("G3", "16n", time, vel);
           break;
         case "rim":
-          rim.triggerAttackRelease("16n", time, vel);
+          rimNoise.triggerAttackRelease("32n", time, vel);
+          rimClick.triggerAttackRelease("F4", "32n", time, vel * 0.6);
           break;
       }
     },
@@ -115,11 +122,14 @@ export function createDrumKit(): DrumKit {
       kick.dispose();
       clapNoise.dispose();
       clapFilter.dispose();
-      hat.dispose();
-      ohat.dispose();
+      hatNoise.dispose();
       hatFilter.dispose();
+      ohatNoise.dispose();
+      ohatFilter.dispose();
       perc.dispose();
-      rim.dispose();
+      rimNoise.dispose();
+      rimFilter.dispose();
+      rimClick.dispose();
       out.dispose();
     },
   };
