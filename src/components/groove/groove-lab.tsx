@@ -18,6 +18,7 @@ import { StepGrid } from "./step-grid";
 import { TransportBar } from "./transport-bar";
 import { LessonPicker } from "./lesson-picker";
 import { Button } from "@/components/ui/button";
+import { AIVariationsButton } from "@/components/ai/ai-variations-button";
 
 export function GrooveLab() {
   const seqRef = useRef<StepSequencer | null>(null);
@@ -186,6 +187,14 @@ export function GrooveLab() {
           onToggle={handleToggleStep}
         />
       </div>
+
+      <AIVariationsButton
+        pattern={pattern}
+        onApply={(p, label) => {
+          setPattern(p);
+          toast(`Patrón AI: ${label}`);
+        }}
+      />
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">

@@ -14,6 +14,8 @@ import {
 } from "@/lib/audio/synth";
 import { SYNTH_PRESETS, type SynthPreset } from "@/lib/synth-presets";
 import { SynthJam, ARP_PATTERNS } from "@/lib/audio/synth-jam";
+import { RandomPresetButton } from "@/components/ai/random-preset-button";
+import { AIRiffButton } from "@/components/ai/ai-riff-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Knob } from "./knob";
@@ -522,6 +524,25 @@ export function SynthLab() {
         onNoteOn={(n) => synthRef.current?.noteOn(n)}
         onNoteOff={(n) => synthRef.current?.noteOff(n)}
       />
+
+      {/* AI tools */}
+      <div className="grid gap-3 lg:grid-cols-2">
+        <RandomPresetButton
+          onApply={(s, _description) => {
+            setState(s);
+            synthRef.current?.set(s);
+            setActivePreset(null);
+          }}
+        />
+        <AIRiffButton
+          bpm={jamBpm}
+          onApply={(notes) => {
+            // Push the AI-generated arpeggio into the jam engine
+            jamRef.current?.setArpeggio(notes);
+            setArpId("ai");
+          }}
+        />
+      </div>
 
       {/* Presets */}
       <div className="space-y-3">
