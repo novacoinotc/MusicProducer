@@ -49,12 +49,22 @@ export function EarTrainer() {
   const [q, setQ] = useState<EarQuestion | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [streak, setStreak] = useState(0);
-  const [best, setBest] = useState(0);
+  const [bestByMode, setBestByMode] = useState<Record<string, number>>({});
+  const best = bestByMode[mode] ?? 0;
+
+  // Load best streaks from DB on mount
+  useEffect(() => {
+    fetch("/api/ear/streak")
+      .then((r) => r.json())
+      .then((d) => setBestByMode(d.streaks ?? {}))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!audioReady) return;
     setQ(generate(mode));
     setPicked(null);
+    setStreak(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioReady, mode]);
 
@@ -74,15 +84,24 @@ export function EarTrainer() {
     if (!q || picked) return;
     setPicked(value);
     const correct = value === q.answer;
-    if (correct) {
-      setStreak((s) => {
-        const n = s + 1;
-        setBest((b) => Math.max(b, n));
-        return n;
-      });
-    } else {
-      setStreak(0);
+    const newStreak = correct ? streak + 1 : 0;
+    setStreak(newStreak);
+    if (correct && newStreak > best) {
+      setBestByMode((p) => ({ ...p, [mode]: newStreak }));
     }
+    // Persist (fire and forget)
+    fetch("/api/ear/streak", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode, correct, currentStreak: newStreak }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (typeof d.best === "number") {
+          setBestByMode((p) => ({ ...p, [mode]: d.best }));
+        }
+      })
+      .catch(() => {});
   }
 
   if (!audioReady) {

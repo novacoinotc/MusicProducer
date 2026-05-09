@@ -30,6 +30,14 @@ export function GrooveLab() {
   const [volume, setVolume] = useState(-3);
   const [lesson, setLesson] = useState<GrooveLesson | null>(null);
   const [showHint, setShowHint] = useState(false);
+  const [completed, setCompleted] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    fetch("/api/groove/complete")
+      .then((r) => r.json())
+      .then((d) => setCompleted(new Set<string>(d.completed ?? [])))
+      .catch(() => {});
+  }, []);
 
   // Lazy-create sequencer once audio is ready
   useEffect(() => {
@@ -101,6 +109,16 @@ export function GrooveLab() {
     if (!lesson) return;
     setPattern(lesson.pattern);
     toast.success("Patrón de referencia cargado. Escúchalo y compáralo con tu intento.");
+    if (!completed.has(lesson.id)) {
+      const next = new Set(completed);
+      next.add(lesson.id);
+      setCompleted(next);
+      fetch("/api/groove/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lessonId: lesson.id }),
+      }).catch(() => {});
+    }
   }
 
   if (!audioReady) {
@@ -155,6 +173,7 @@ export function GrooveLab() {
         </div>
         <LessonPicker
           activeId={lesson?.id ?? null}
+          completed={completed}
           onPick={handlePickLesson}
         />
       </div>

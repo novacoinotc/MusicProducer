@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GROOVE_LESSONS, type GrooveLesson } from "@/lib/groove-presets";
 
@@ -11,25 +12,34 @@ const DIFF_COLOR = {
 
 export function LessonPicker({
   activeId,
+  completed,
   onPick,
 }: {
   activeId: string | null;
+  completed: Set<string>;
   onPick: (l: GrooveLesson) => void;
 }) {
   return (
     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
       {GROOVE_LESSONS.map((l) => {
         const active = activeId === l.id;
+        const isDone = completed.has(l.id);
         return (
           <button
             key={l.id}
             onClick={() => onPick(l)}
             className={cn(
-              "group rounded-lg border bg-card p-4 text-left transition-colors hover:border-primary/40",
+              "group relative rounded-lg border bg-card p-4 text-left transition-colors hover:border-primary/40",
               active && "border-primary/60 bg-primary/5",
+              isDone && !active && "border-emerald-500/40",
             )}
           >
-            <div className="flex items-center justify-between">
+            {isDone && (
+              <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+                <Check className="h-3 w-3" />
+              </span>
+            )}
+            <div className="flex items-center justify-between pr-7">
               <span
                 className={cn(
                   "font-mono text-[10px] uppercase tracking-wider",

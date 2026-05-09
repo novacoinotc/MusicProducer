@@ -15,6 +15,7 @@
     "@neondatabase/serverless": "^0.10.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dotenv": "^17.4.2",
     "drizzle-orm": "^0.36.4",
     "lucide-react": "^0.469.0",
     "next": "^16.0.0",
@@ -24,8 +25,9 @@
     "react-dom": "^19.0.0",
     "sonner": "^1.7.1",
     "tailwind-merge": "^2.5.5",
-    "tone": "^15.0.4",
     "tonal": "^6.4.0",
+    "tone": "^15.0.4",
+    "zod": "^4.4.3",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
