@@ -143,10 +143,14 @@ export class TechnoSynth {
       oscillator: { type: "sine" },
     } as unknown as SynthOpts).connect(this.subGain);
 
+    // Construct with a sane unit range; depth-aware min/max are set by
+    // connectLfo when the user picks a target. Keeping min === max here
+    // would crash because the internal oscillator emits ~1e-7 values
+    // ("Value must be within [0, 0], got: 1e-7") on Safari/Webkit.
     this.lfo = new Tone.LFO({
       frequency: s.lfoRate,
       min: 0,
-      max: 0,
+      max: 1,
     });
     this.lfo.start();
   }
