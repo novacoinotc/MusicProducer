@@ -47,13 +47,22 @@ export function SynthLab() {
   const [challenge, setChallenge] = useState<SynthPreset | null>(null);
   const [showHint, setShowHint] = useState(false);
 
+  const [initError, setInitError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!audioReady) return;
-    const s = new TechnoSynth();
-    synthRef.current = s;
-    s.set(state);
+    let s: TechnoSynth | null = null;
+    try {
+      s = new TechnoSynth();
+      synthRef.current = s;
+      s.set(state);
+    } catch (e) {
+      console.error("[synth] init failed", e);
+      setInitError(e instanceof Error ? e.message : String(e));
+      return;
+    }
     return () => {
-      s.dispose();
+      s?.dispose();
       synthRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -108,12 +117,34 @@ export function SynthLab() {
           size="lg"
           className="mt-6"
           onClick={async () => {
-            await ensureAudio();
-            setAudioReady(true);
+            try {
+              await ensureAudio();
+              setAudioReady(true);
+            } catch (e) {
+              console.error("[synth] ensureAudio failed", e);
+              setInitError(e instanceof Error ? e.message : String(e));
+            }
           }}
         >
           Activar audio
         </Button>
+      </div>
+    );
+  }
+
+  if (initError) {
+    return (
+      <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-6">
+        <h2 className="text-lg font-semibold text-destructive">
+          No se pudo inicializar el sintetizador
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {initError}
+        </p>
+        <p className="mt-4 text-xs text-muted-foreground">
+          Tu navegador puede no soportar todas las funciones de Web Audio.
+          Prueba con Chrome o Firefox actualizados.
+        </p>
       </div>
     );
   }

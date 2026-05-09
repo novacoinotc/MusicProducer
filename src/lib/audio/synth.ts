@@ -62,10 +62,15 @@ export const DEFAULT_SYNTH: SynthState = {
   volume: -10,
 };
 
+type SynthOpts = ConstructorParameters<typeof Tone.Synth>[0];
+
 /**
- * A small subtractive synth voice with two oscillators, sub, filter env, amp env,
- * LFO and an FX bus (drive → delay → reverb). Built around Tone.PolySynth so it
- * can hold chords for melodic techno work.
+ * Subtractive synth with two oscillators + sub, shared filter + filter env,
+ * LFO with switchable target, and a serial FX bus (drive → delay → reverb).
+ *
+ * Built around three PolySynth(Tone.Synth) instances rather than MonoSynth so
+ * we don't fight MonoSynth's internal filter — our filter chain is the only
+ * filter the signal sees.
  */
 export class TechnoSynth {
   private out: Tone.Gain;
@@ -75,83 +80,91 @@ export class TechnoSynth {
   private filter: Tone.Filter;
   private filterEnv: Tone.FrequencyEnvelope;
   private lfo: Tone.LFO;
-  private osc1: Tone.PolySynth<Tone.MonoSynth>;
-  private osc2: Tone.PolySynth<Tone.MonoSynth>;
-  private sub: Tone.PolySynth<Tone.MonoSynth>;
+  private lfoConnectedTo: Tone.InputNode | null = null;
+  private osc1: Tone.PolySynth<Tone.Synth>;
+  private osc2: Tone.PolySynth<Tone.Synth>;
+  private sub: Tone.PolySynth<Tone.Synth>;
   private osc2Gain: Tone.Gain;
   private subGain: Tone.Gain;
   private state: SynthState = { ...DEFAULT_SYNTH };
 
   constructor() {
-    this.out = new Tone.Gain(Tone.dbToGain(this.state.volume)).toDestination();
-    this.reverb = new Tone.Reverb({ decay: 3.5, wet: this.state.reverbMix }).connect(this.out);
+    const s = this.state;
+    this.out = new Tone.Gain(Tone.dbToGain(s.volume)).toDestination();
+    this.reverb = new Tone.Reverb({ decay: 3.5, wet: s.reverbMix }).connect(
+      this.out,
+    );
     this.delay = new Tone.FeedbackDelay({
-      delayTime: this.state.delayTime,
+      delayTime: s.delayTime,
       feedback: 0.35,
-      wet: this.state.delayMix,
+      wet: s.delayMix,
     }).connect(this.reverb);
-    this.drive = new Tone.Distortion({ distortion: this.state.drive, wet: 1 }).connect(this.delay);
+    this.drive = new Tone.Distortion({ distortion: s.drive, wet: 1 }).connect(
+      this.delay,
+    );
     this.filter = new Tone.Filter({
-      frequency: this.state.filterCutoff,
-      type: this.state.filterType,
-      Q: this.state.filterRes,
+      frequency: s.filterCutoff,
+      type: s.filterType,
+      Q: s.filterRes,
       rolloff: -24,
     }).connect(this.drive);
     this.filterEnv = new Tone.FrequencyEnvelope({
-      attack: this.state.filterAttack,
-      decay: this.state.filterDecay,
-      sustain: this.state.filterSustain,
-      release: this.state.filterRelease,
-      baseFrequency: this.state.filterCutoff,
-      octaves: this.state.filterEnvAmount * 4,
+      attack: s.filterAttack,
+      decay: s.filterDecay,
+      sustain: s.filterSustain,
+      release: s.filterRelease,
+      baseFrequency: s.filterCutoff,
+      octaves: s.filterEnvAmount * 4,
     }).connect(this.filter.frequency);
 
-    // PolySynth + MonoSynth options are deeply nested and require all sub-fields
-    // when typed strictly; we treat them as opaque records since Tone.js accepts
-    // the partial shape at runtime.
-    const ampOpts = {
-      oscillator: { type: this.state.osc1Type },
+    const baseOpts = {
       envelope: {
-        attack: this.state.ampAttack,
-        decay: this.state.ampDecay,
-        sustain: this.state.ampSustain,
-        release: this.state.ampRelease,
+        attack: s.ampAttack,
+        decay: s.ampDecay,
+        sustain: s.ampSustain,
+        release: s.ampRelease,
       },
-      filter: { type: "lowpass", Q: 0, rolloff: -12 },
-      filterEnvelope: {
-        attack: 0,
-        decay: 0,
-        sustain: 1,
-        release: 0,
-        baseFrequency: 20000,
-        octaves: 0,
-      },
-    } as unknown as ConstructorParameters<typeof Tone.MonoSynth>[0];
+    };
 
-    this.osc1 = new Tone.PolySynth(Tone.MonoSynth, ampOpts).connect(this.filter);
-    this.osc2 = new Tone.PolySynth(Tone.MonoSynth, {
-      ...ampOpts,
-      oscillator: {
-        type: this.state.osc2Type,
-        detune: this.state.osc2Detune,
-      },
-    } as unknown as ConstructorParameters<typeof Tone.MonoSynth>[0]);
-    this.osc2Gain = new Tone.Gain(this.state.osc2Mix).connect(this.filter);
-    this.osc2.connect(this.osc2Gain);
+    this.osc1 = new Tone.PolySynth(Tone.Synth, {
+      ...baseOpts,
+      oscillator: { type: s.osc1Type },
+    } as unknown as SynthOpts).connect(this.filter);
 
-    this.sub = new Tone.PolySynth(Tone.MonoSynth, {
-      ...ampOpts,
+    this.osc2Gain = new Tone.Gain(s.osc2Mix).connect(this.filter);
+    this.osc2 = new Tone.PolySynth(Tone.Synth, {
+      ...baseOpts,
+      oscillator: { type: s.osc2Type, detune: s.osc2Detune },
+    } as unknown as SynthOpts).connect(this.osc2Gain);
+
+    this.subGain = new Tone.Gain(s.subLevel).connect(this.filter);
+    this.sub = new Tone.PolySynth(Tone.Synth, {
+      ...baseOpts,
       oscillator: { type: "sine" },
-    } as unknown as ConstructorParameters<typeof Tone.MonoSynth>[0]);
-    this.subGain = new Tone.Gain(this.state.subLevel).connect(this.filter);
-    this.sub.connect(this.subGain);
+    } as unknown as SynthOpts).connect(this.subGain);
 
     this.lfo = new Tone.LFO({
-      frequency: this.state.lfoRate,
+      frequency: s.lfoRate,
       min: 0,
       max: 0,
     });
     this.lfo.start();
+  }
+
+  private connectLfo(target: Tone.InputNode) {
+    this.disconnectLfo();
+    this.lfo.connect(target);
+    this.lfoConnectedTo = target;
+  }
+
+  private disconnectLfo() {
+    if (!this.lfoConnectedTo) return;
+    try {
+      this.lfo.disconnect(this.lfoConnectedTo);
+    } catch {
+      // already disconnected
+    }
+    this.lfoConnectedTo = null;
   }
 
   set(state: Partial<SynthState>) {
@@ -165,10 +178,7 @@ export class TechnoSynth {
     }
     if (state.osc2Type !== undefined || state.osc2Detune !== undefined) {
       this.osc2.set({
-        oscillator: {
-          type: s.osc2Type,
-          detune: s.osc2Detune,
-        },
+        oscillator: { type: s.osc2Type, detune: s.osc2Detune },
       } as unknown as Parameters<typeof this.osc2.set>[0]);
     }
     if (state.osc2Mix !== undefined) {
@@ -221,15 +231,15 @@ export class TechnoSynth {
       this.lfo.frequency.rampTo(s.lfoRate, 0.02);
     }
     if (state.lfoDepth !== undefined || state.lfoTarget !== undefined) {
-      this.lfo.disconnect();
+      this.disconnectLfo();
       if (s.lfoTarget === "filter" && s.lfoDepth > 0) {
         this.lfo.min = -s.lfoDepth * 2000;
         this.lfo.max = s.lfoDepth * 2000;
-        this.lfo.connect(this.filter.frequency);
+        this.connectLfo(this.filter.frequency as unknown as Tone.InputNode);
       } else if (s.lfoTarget === "amp" && s.lfoDepth > 0) {
         this.lfo.min = 1 - s.lfoDepth;
         this.lfo.max = 1;
-        this.lfo.connect(this.out.gain);
+        this.connectLfo(this.out.gain as unknown as Tone.InputNode);
       }
     }
     if (state.delayMix !== undefined) {
@@ -277,6 +287,7 @@ export class TechnoSynth {
 
   dispose() {
     this.releaseAll();
+    this.disconnectLfo();
     this.osc1.dispose();
     this.osc2.dispose();
     this.sub.dispose();

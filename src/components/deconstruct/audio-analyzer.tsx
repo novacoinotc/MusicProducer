@@ -5,6 +5,12 @@ import * as Tone from "tone";
 import { Pause, Play, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ensureAudio } from "@/lib/audio/engine";
+import {
+  analyzeTrack,
+  SECTION_COLOR,
+  SECTION_LABEL,
+  type TrackAnalysis,
+} from "@/lib/audio/track-analysis";
 import { cn } from "@/lib/utils";
 
 const FREQ_BANDS = [
@@ -26,6 +32,8 @@ export function AudioAnalyzer() {
   const [bandLevels, setBandLevels] = useState<number[]>(
     Array(FREQ_BANDS.length).fill(0),
   );
+  const [analysis, setAnalysis] = useState<TrackAnalysis | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   const playerRef = useRef<Tone.Player | null>(null);
   const fftRef = useRef<Tone.FFT | null>(null);
@@ -48,14 +56,28 @@ export function AudioAnalyzer() {
     setFileName(file.name);
     const url = URL.createObjectURL(file);
     setAudioUrl(url);
+    setAnalyzing(true);
+    setAnalysis(null);
 
-    // Compute waveform peaks
+    // Compute waveform peaks + structural analysis
     const arrayBuffer = await file.arrayBuffer();
     const ctx = new AudioContext();
     const buf = await ctx.decodeAudioData(arrayBuffer.slice(0));
     setDuration(buf.duration);
     const peaks = computePeaks(buf, 800);
     setWaveform(peaks);
+
+    // Run BPM + section analysis in a microtask so the UI can paint first
+    setTimeout(() => {
+      try {
+        const a = analyzeTrack(buf);
+        setAnalysis(a);
+      } catch (e) {
+        console.error("[deconstruct] analysis failed", e);
+      } finally {
+        setAnalyzing(false);
+      }
+    }, 50);
 
     // Set up Tone player + FFT
     playerRef.current?.dispose();
@@ -111,17 +133,16 @@ export function AudioAnalyzer() {
     const levels = FREQ_BANDS.map((b) => {
       const fromBin = Math.floor(b.from / binHz);
       const toBin = Math.min(values.length, Math.ceil(b.to / binHz));
-      let sum = 0;
-      let count = 0;
+      // Take peak within the band — averaging hides musical content
+      // because most bins are near silence even when the band is loud.
+      let peak = -Infinity;
       for (let i = fromBin; i < toBin; i++) {
-        // Convert dB to linear and average
         const v = values[i];
-        if (Number.isFinite(v)) {
-          sum += Math.max(0, v + 100); // shift floor
-          count++;
-        }
+        if (Number.isFinite(v) && v > peak) peak = v;
       }
-      return count ? Math.min(1, sum / count / 100) : 0;
+      if (!Number.isFinite(peak)) return 0;
+      // Normalize from -80..0 dB to 0..1
+      return Math.max(0, Math.min(1, (peak + 80) / 80));
     });
     setBandLevels(levels);
 
@@ -138,7 +159,20 @@ export function AudioAnalyzer() {
     setPosition(0);
     setWaveform([]);
     setBandLevels(Array(FREQ_BANDS.length).fill(0));
+    setAnalysis(null);
+    setAnalyzing(false);
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
+  }
+
+  function seekTo(sec: number) {
+    if (!playerRef.current || !duration) return;
+    setPosition(sec);
+    if (isPlaying) {
+      playerRef.current.stop();
+      playerRef.current.start(undefined, sec);
+      startTimeRef.current = Tone.now();
+      startPosRef.current = sec;
+    }
   }
 
   function seekFromClick(e: React.MouseEvent<HTMLDivElement>) {
@@ -213,6 +247,21 @@ export function AudioAnalyzer() {
         />
       </div>
 
+      {/* Structural analysis */}
+      {analyzing && (
+        <div className="rounded-lg border bg-card p-4 text-center text-sm text-muted-foreground">
+          Analizando track…
+        </div>
+      )}
+
+      {analysis && (
+        <TrackStructure
+          analysis={analysis}
+          position={position}
+          onSeek={seekTo}
+        />
+      )}
+
       {/* Frequency bands */}
       <div className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-6">
         {FREQ_BANDS.map((b, i) => {
@@ -273,6 +322,147 @@ export function AudioAnalyzer() {
             Groove Lab y el sonido en el Sound Design Lab.
           </li>
         </ol>
+      </div>
+    </div>
+  );
+}
+
+function TrackStructure({
+  analysis,
+  position,
+  onSeek,
+}: {
+  analysis: TrackAnalysis;
+  position: number;
+  onSeek: (sec: number) => void;
+}) {
+  const { bpm, totalBars, durationSec, sections, bars } = analysis;
+  const currentBar =
+    bars.findIndex((b) => position >= b.startSec && position < b.endSec) ?? -1;
+
+  return (
+    <div className="space-y-4 rounded-xl border bg-card p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="font-mono text-xs uppercase tracking-wider text-primary">
+          Estructura del track
+        </h3>
+        <div className="flex flex-wrap gap-4 font-mono text-xs text-muted-foreground">
+          <span>
+            BPM detectado{" "}
+            <span className="font-mono text-sm text-foreground">
+              {bpm}
+            </span>
+          </span>
+          <span>
+            {totalBars} compases
+          </span>
+          <span>
+            {Math.floor(durationSec / 60)}:
+            {Math.floor(durationSec % 60).toString().padStart(2, "0")}
+          </span>
+        </div>
+      </div>
+
+      {/* Section bar (timeline of sections) */}
+      <div className="overflow-x-auto">
+        <div className="flex h-12 min-w-[600px] overflow-hidden rounded-md border">
+          {sections.map((s, i) => {
+            const widthPct =
+              ((s.endBar - s.startBar + 1) / totalBars) * 100;
+            return (
+              <button
+                key={i}
+                onClick={() => onSeek(s.startSec)}
+                className={cn(
+                  "group relative h-full border-r border-background/20 transition-opacity hover:opacity-80",
+                  SECTION_COLOR[s.type],
+                )}
+                style={{ width: `${widthPct}%` }}
+                title={`${SECTION_LABEL[s.type]} · ${s.endBar - s.startBar + 1} compases`}
+              >
+                <div className="flex h-full flex-col items-start justify-center gap-0.5 px-2">
+                  <span className="font-mono text-[10px] font-semibold uppercase tracking-wider">
+                    {SECTION_LABEL[s.type]}
+                  </span>
+                  <span className="font-mono text-[9px] text-foreground/70">
+                    {s.endBar - s.startBar + 1} bars
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Bar grid — one square per bar, color by section, brightness by energy */}
+      <div>
+        <h4 className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Mapa por compás (click para saltar)
+        </h4>
+        <div
+          className="grid gap-[2px]"
+          style={{
+            gridTemplateColumns: "repeat(auto-fill, minmax(14px, 1fr))",
+          }}
+        >
+          {bars.map((b) => {
+            const section = sections.find(
+              (s) => b.bar >= s.startBar && b.bar <= s.endBar,
+            );
+            const isCurrent = currentBar === b.bar;
+            return (
+              <button
+                key={b.bar}
+                onClick={() => onSeek(b.startSec)}
+                className={cn(
+                  "aspect-square rounded-sm border transition-all hover:scale-110",
+                  section
+                    ? SECTION_COLOR[section.type]
+                    : "border-border bg-secondary",
+                  isCurrent &&
+                    "ring-2 ring-primary ring-offset-1 ring-offset-background",
+                )}
+                style={{ opacity: 0.4 + b.energy * 0.6 }}
+                title={`Compás ${b.bar + 1} · ${section ? SECTION_LABEL[section.type] : ""} · energía ${(b.energy * 100).toFixed(0)}%`}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Section legend with timing detail */}
+      <div className="grid gap-2 sm:grid-cols-2">
+        {sections.map((s, i) => {
+          const lengthBars = s.endBar - s.startBar + 1;
+          const lengthSec = s.endSec - s.startSec;
+          return (
+            <button
+              key={i}
+              onClick={() => onSeek(s.startSec)}
+              className="flex items-center justify-between gap-3 rounded-md border bg-secondary/20 p-3 text-left transition-colors hover:bg-secondary/40"
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className={cn(
+                    "h-3 w-3 rounded-sm",
+                    SECTION_COLOR[s.type],
+                  )}
+                />
+                <div>
+                  <div className="font-medium">{SECTION_LABEL[s.type]}</div>
+                  <div className="font-mono text-[10px] text-muted-foreground">
+                    Compás {s.startBar + 1}–{s.endBar + 1} · {lengthBars}{" "}
+                    bars · {Math.round(lengthSec)}s
+                  </div>
+                </div>
+              </div>
+              <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                {Math.floor(s.startSec / 60)}:
+                {Math.floor(s.startSec % 60).toString().padStart(2, "0")}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
