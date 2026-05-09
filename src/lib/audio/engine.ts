@@ -15,18 +15,32 @@ export async function ensureAudio(): Promise<typeof Tone> {
   }
 
   const ctx = Tone.getContext();
+  console.info("[engine] ensureAudio start", {
+    contextState: ctx.state,
+    rawState: (ctx.rawContext as AudioContext)?.state,
+    sampleRate: ctx.sampleRate,
+    destinationVolume:
+      (Tone.getDestination() as unknown as { volume: { value: number } })
+        ?.volume?.value,
+  });
+
   if (ctx.state === "running") {
+    console.info("[engine] context already running, skipping start");
     return Tone;
   }
 
-  // First-time gesture or post-suspension resume: ask Tone to start, then
-  // belt-and-suspenders against rawContext still being suspended.
   await Tone.start();
+  console.info("[engine] Tone.start() resolved", {
+    contextState: Tone.getContext().state,
+  });
 
   const raw = ctx.rawContext as AudioContext;
   if (raw && raw.state !== "running") {
     try {
       await raw.resume();
+      console.info("[engine] rawContext.resume() resolved", {
+        rawState: raw.state,
+      });
     } catch (e) {
       console.error("[engine] rawContext.resume failed", e);
     }
@@ -38,6 +52,7 @@ export async function ensureAudio(): Promise<typeof Tone> {
         "Verifica que tu navegador no tenga la pestaña silenciada y que el volumen del sistema esté arriba.",
     );
   }
+  console.info("[engine] audio is now running");
   return Tone;
 }
 
@@ -52,6 +67,23 @@ export function audioContextState() {
  */
 export async function playTestBeep() {
   await ensureAudio();
+  // Make sure Master/Destination is fully audible. If something earlier
+  // muted it, the user would hear silence even with a fresh oscillator.
+  const dest = Tone.getDestination();
+  console.info("[beep] destination state", {
+    volume: (dest as unknown as { volume: { value: number } }).volume?.value,
+    mute: (dest as unknown as { mute: boolean }).mute,
+  });
+  if ((dest as unknown as { mute: boolean }).mute) {
+    (dest as unknown as { mute: boolean }).mute = false;
+    console.warn("[beep] destination was muted — unmuted");
+  }
+  if (
+    (dest as unknown as { volume: { value: number } }).volume?.value === -Infinity
+  ) {
+    (dest as unknown as { volume: { value: number } }).volume.value = 0;
+    console.warn("[beep] destination volume was -Infinity — reset to 0 dB");
+  }
   const beep = new Tone.Oscillator({
     frequency: 440,
     type: "sine",
@@ -60,7 +92,7 @@ export async function playTestBeep() {
   const now = Tone.now();
   beep.start(now);
   beep.stop(now + 0.4);
-  // Dispose after it stops to free the node
+  console.info("[beep] scheduled", { now, freq: 440 });
   setTimeout(() => beep.dispose(), 800);
 }
 
