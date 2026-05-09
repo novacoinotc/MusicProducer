@@ -47,7 +47,10 @@ export function SynthLab() {
   const [challenge, setChallenge] = useState<SynthPreset | null>(null);
   const [showHint, setShowHint] = useState(false);
 
-  const [initError, setInitError] = useState<string | null>(null);
+  const [initError, setInitError] = useState<{
+    message: string;
+    stack?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!audioReady) return;
@@ -58,7 +61,8 @@ export function SynthLab() {
       s.set(state);
     } catch (e) {
       console.error("[synth] init failed", e);
-      setInitError(e instanceof Error ? e.message : String(e));
+      const err = e instanceof Error ? e : new Error(String(e));
+      setInitError({ message: err.message, stack: err.stack });
       return;
     }
     return () => {
@@ -122,7 +126,8 @@ export function SynthLab() {
               setAudioReady(true);
             } catch (e) {
               console.error("[synth] ensureAudio failed", e);
-              setInitError(e instanceof Error ? e.message : String(e));
+              const err = e instanceof Error ? e : new Error(String(e));
+              setInitError({ message: err.message, stack: err.stack });
             }
           }}
         >
@@ -138,12 +143,20 @@ export function SynthLab() {
         <h2 className="text-lg font-semibold text-destructive">
           No se pudo inicializar el sintetizador
         </h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {initError}
-        </p>
+        <p className="mt-2 text-sm">{initError.message}</p>
+        {initError.stack && (
+          <details className="mt-3">
+            <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+              Stack trace (para debugging)
+            </summary>
+            <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-background/50 p-3 text-[10px] leading-tight">
+              {initError.stack}
+            </pre>
+          </details>
+        )}
         <p className="mt-4 text-xs text-muted-foreground">
-          Tu navegador puede no soportar todas las funciones de Web Audio.
-          Prueba con Chrome o Firefox actualizados.
+          Si este error persiste, copia el stack trace y compártelo. Mientras
+          tanto, los demás módulos siguen funcionando.
         </p>
       </div>
     );

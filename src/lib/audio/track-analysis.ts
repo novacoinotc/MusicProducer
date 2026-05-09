@@ -202,6 +202,19 @@ function detectSections(bars: BarBlock[]): TrackSection[] {
     merged = next;
   }
 
+  // After short-group merging, two adjacent groups may end up at the same
+  // level (e.g. high → mid<8 → high becomes high → high). Collapse those.
+  const collapsed: typeof groups = [];
+  for (const g of merged) {
+    const last = collapsed[collapsed.length - 1];
+    if (last && last.level === g.level) {
+      last.to = g.to;
+    } else {
+      collapsed.push({ ...g });
+    }
+  }
+  merged = collapsed;
+
   // Map levels to section types using context (position + transition)
   const last = merged.length - 1;
   const sections: TrackSection[] = merged.map((g, idx) => {

@@ -143,22 +143,28 @@ export class TechnoSynth {
       oscillator: { type: "sine" },
     } as unknown as SynthOpts).connect(this.subGain);
 
-    // Construct with a sane unit range; depth-aware min/max are set by
-    // connectLfo when the user picks a target. Keeping min === max here
-    // would crash because the internal oscillator emits ~1e-7 values
-    // ("Value must be within [0, 0], got: 1e-7") on Safari/Webkit.
+    // Construct with a non-degenerate range; the actual modulation depth is
+    // applied by connectLfo. Crucially we do NOT start() the oscillator here
+    // — Tone keeps emitting tiny non-zero samples (e.g. 1e-7) into the Scale
+    // and if some other path narrows the range to [0, 0] briefly, the
+    // assertion ("Value must be within [0, 0], got: 1e-7") fires on Safari.
     this.lfo = new Tone.LFO({
       frequency: s.lfoRate,
-      min: 0,
+      min: -1,
       max: 1,
     });
-    this.lfo.start();
   }
+
+  private lfoStarted = false;
 
   private connectLfo(target: Tone.InputNode) {
     this.disconnectLfo();
     this.lfo.connect(target);
     this.lfoConnectedTo = target;
+    if (!this.lfoStarted) {
+      this.lfo.start();
+      this.lfoStarted = true;
+    }
   }
 
   private disconnectLfo() {
@@ -292,6 +298,13 @@ export class TechnoSynth {
   dispose() {
     this.releaseAll();
     this.disconnectLfo();
+    if (this.lfoStarted) {
+      try {
+        this.lfo.stop();
+      } catch {
+        // already stopped
+      }
+    }
     this.osc1.dispose();
     this.osc2.dispose();
     this.sub.dispose();
